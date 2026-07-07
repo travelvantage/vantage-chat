@@ -69,6 +69,14 @@
   .vtg__note { background: var(--brass-soft); border: 1px solid rgba(182,146,79,.5); border-radius: 12px; padding: 12px 14px; font-size: 12.5px; line-height: 1.55; color: #4A4126; }
   .vtg__note strong { display:block; font-size: 10.5px; letter-spacing: 1.4px; text-transform: uppercase; color: #8A6E2F; margin-bottom: 5px; }
 
+  /* ---- In-chat affiliate CTA (value-first) ---- */
+  .vtg__cta { max-width: 86%; display: flex; flex-direction: column; gap: 7px; }
+  .vtg__ctabtn { display: flex; align-items: center; justify-content: space-between; gap: 12px; text-decoration: none; font: inherit; font-size: 13.5px; font-weight: 600; color: #fff; background: var(--ink); border: 1px solid var(--ink); border-radius: 12px; padding: 11px 15px; transition: background .15s ease, transform .05s ease; }
+  .vtg__ctabtn:hover { background: #000; }
+  .vtg__ctabtn:active { transform: scale(.99); }
+  .vtg__ctabtn .vtg__ctaarrow { font-size: 15px; opacity: .8; flex: 0 0 auto; }
+  .vtg__ctahint { font-size: 10.5px; line-height: 1.45; color: var(--text-dim); padding: 1px 2px 0; }
+
   /* ---- Email capture card ---- */
   .vtg__cap { width: 100%; background: #fff; border: 1px solid var(--brass); border-radius: 13px; padding: 15px 15px 14px; }
   .vtg__cap h5 { margin: 0 0 4px; font-family: Georgia, serif; font-size: 15.5px; color: var(--ink); font-weight: 600; }
@@ -188,6 +196,7 @@
   var userTurns = 0;
   var leadDone = false;
   var captureOpen = false;
+  var linkSeen = false;
   function pushT(role, text){ transcript.push(role + ": " + text); if (transcript.length > 14) transcript.shift(); }
   function buildContext(){ return transcript.join("\n").slice(-3500); }
 
@@ -227,26 +236,65 @@
   function esc(s){ return String(s).replace(/[&<>"']/g, function (c){ return ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" })[c]; }); }
   function scrollDown(){ log.scrollTop = log.scrollHeight; }
 
-  // --- DETERMINISTIC LINK SUPPRESSION (email-first pivot) ---
-  // Removes any markdown link or raw URL from a Brain reply so it NEVER shows in chat.
-  // Returns the cleaned text + whether a link was present (= "offer plan" signal).
-  function stripLinks(text){
-    var had = false;
+  // --- VALUE-FIRST LINK RENDERING ---
+  // Extracts affiliate link(s) from a Brain reply and returns them so they can be shown
+  // as in-chat CTA button(s) — the link is NO LONGER hidden. The prose keeps a natural
+  // label (not a raw URL). The Brain still emits affiliate_link exactly as before.
+  function cleanLabel(s){ s = String(s).trim().replace(/\s+/g, " "); if (s.length > 42) s = s.slice(0, 40).trim() + "\u2026"; return s; }
+  function renderLinks(text){
+    var links = [];
     var t = String(text);
-    t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, function (m, label){ had = true; return label; });
-    t = t.replace(/(https?:\/\/[^\s<]+)/g, function (){ had = true; return ""; });
+    // markdown links: [label](url)
+    t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, function (m, label, url){
+      var urlLabel = /^https?:\/\//i.test(label.trim());
+      var lbl = urlLabel ? "View this option" : cleanLabel(label);
+      links.push({ label: lbl, url: url });
+      return urlLabel ? "" : label;   // keep a readable label inline; drop bare-URL labels
+    });
+    // raw URLs
+    t = t.replace(/(https?:\/\/[^\s<)]+)/g, function (m, url){
+      url = url.replace(/[.,;:!?)]+$/, "");
+      links.push({ label: "View this option", url: url });
+      return "";
+    });
     t = t.replace(/\s*:\s*([.!?])/g, "$1").replace(/\(\s*\)/g, "").replace(/[ \t]{2,}/g, " ").replace(/[ \t]+([.,!?])/g, "$1").replace(/\n{3,}/g, "\n\n").trim();
-    return { clean: t, had: had };
+    return { clean: t, links: links, had: links.length > 0 };
   }
 
-  function addBubble(role, text){
+  function addBubble(role, text, links){
     var row = document.createElement("div");
     row.className = "vtg__row " + (role === "user" ? "vtg--u" : "vtg--a");
     var b = document.createElement("div");
     b.className = "vtg__bubble";
-    b.textContent = text;            // plain text — no clickable links in chat
+    b.textContent = text;
     row.appendChild(b);
     log.appendChild(row);
+    if (links && links.length){
+      var crow = document.createElement("div");
+      crow.className = "vtg__row vtg--a";
+      var cta = document.createElement("div");
+      cta.className = "vtg__cta";
+      links.forEach(function (lk){
+        var a = document.createElement("a");
+        a.className = "vtg__ctabtn";
+        a.href = lk.url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer sponsored";
+        var lab = document.createElement("span");
+        lab.textContent = lk.label;
+        var arr = document.createElement("span");
+        arr.className = "vtg__ctaarrow";
+        arr.textContent = "\u2197";
+        a.appendChild(lab); a.appendChild(arr);
+        cta.appendChild(a);
+      });
+      var hint = document.createElement("div");
+      hint.className = "vtg__ctahint";
+      hint.textContent = "Affiliate link \u00B7 you book directly with the provider, at no extra cost to you.";
+      cta.appendChild(hint);
+      crow.appendChild(cta);
+      log.appendChild(crow);
+    }
     scrollDown();
   }
   function addNote(label, text){
@@ -267,7 +315,7 @@
   function showLeadBar(){ if (!leadDone && !captureOpen) leadBar.classList.add("is-shown"); }
   function hideLeadBar(){ leadBar.classList.remove("is-shown"); }
 
-  // --- EMAIL CAPTURE CARD ---
+  // --- EMAIL CAPTURE CARD (opt-in only — never auto-pops) ---
   function showCapture(){
     if (leadDone || captureOpen) return;
     captureOpen = true;
@@ -373,12 +421,15 @@
         hideTyping();
         var raw = (data && (data.reply || data.output || data.text)) || "";
         if (!raw) throw new Error("empty");
-        var s = stripLinks(raw);               // link never shown in chat
-        addBubble("assistant", s.clean);
-        pushT("Assistant", s.clean);
-        logTurn(text, s.clean, s.had);          // fire-and-forget logging (all turns)
-        if (s.had && !leadDone){ showCapture(); }   // Brain offered the link -> capture instead
-        else if (userTurns >= 1 && !leadDone){ showLeadBar(); } // pull-not-push affordance
+        var parsed = renderLinks(raw);          // link SHOWN in chat as CTA (value-first)
+        addBubble("assistant", parsed.clean, parsed.links);
+        pushT("Assistant", parsed.clean);
+        logTurn(text, parsed.clean, parsed.had); // fire-and-forget logging (all turns)
+        if (parsed.had) linkSeen = true;
+        // VALUE-FIRST: the email capture NEVER auto-pops. It's an optional affordance,
+        // surfaced only once there's real value to email (a recommendation appeared,
+        // or a couple of turns in). The card itself opens only if the user taps it.
+        if (!leadDone && !captureOpen && (linkSeen || userTurns >= 2)) showLeadBar();
       })
       .catch(function (){
         hideTyping();
