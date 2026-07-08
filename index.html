@@ -146,9 +146,10 @@
       <span class="vtg__i">i</span> AI concierge · how this works <span class="vtg__caret">▾</span>
     </button>
     <div class="vtg__disc" id="vtgDisc" role="dialog" aria-label="Disclosure">
-      <h4>Disclosure</h4>
+      <h4>How this works</h4>
       <p>You're chatting with an AI assistant, not a human.</p>
-      <p>Vantage is an independent, AI-powered travel concierge. We plan your trip and point you to trusted providers; you book directly with each provider under their own terms. Some links are affiliate links, and we may earn a commission at no extra cost to you.</p>
+      <p>Vantage is an independent, AI-powered travel concierge. We suggest and recommend — we are not a travel agent or tour operator, we don't arrange trips, handle bookings, or take payment. You freely choose among independent providers and book, contract, and pay directly on each provider's own website.</p>
+      <p>Some links are affiliate links, and we may earn a commission at no extra cost to you.</p>
     </div>
   </div>
 
@@ -161,7 +162,7 @@
   </div>
 
   <div class="vtg__leadbar" id="vtgLeadBar">
-    <button class="vtg__leadbtn" id="vtgLeadBtn" type="button">✉ Email me my plan</button>
+    <button class="vtg__leadbtn" id="vtgLeadBtn" type="button">✉ Email me my suggestions</button>
   </div>
 
   <div class="vtg__composer">
@@ -170,7 +171,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
     </button>
   </div>
-  <div class="vtg__foot">Curated, not guessed · Free to use</div>
+  <div class="vtg__foot">Curated, not guessed · You choose &amp; book directly · Free to use</div>
 </div>
 
 <script>
@@ -207,6 +208,7 @@
   var linkGateOff = false;   // valve used -> links unlocked without email
   var pendingLinks = [];     // links held back by the plan gate
   var messages = [];         // persisted render history: {role, text, links}
+  var captureCard = null;    // reference to the currently open capture card element
   function pushT(role, text){ transcript.push(role + ": " + text); if (transcript.length > 14) transcript.shift(); }
   function buildContext(){ return transcript.join("\n").slice(-3500); }
 
@@ -275,13 +277,13 @@
     var t = String(text);
     t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, function (m, label, url){
       var urlLabel = /^https?:\/\//i.test(label.trim());
-      var lbl = urlLabel ? "View this option" : cleanLabel(label);
+      var lbl = urlLabel ? "Browse these options" : cleanLabel(label);
       links.push({ label: lbl, url: url });
       return urlLabel ? "" : label;
     });
     t = t.replace(/(https?:\/\/[^\s<)]+)/g, function (m, url){
       url = url.replace(/[.,;:!?)]+$/, "");
-      links.push({ label: "View this option", url: url });
+      links.push({ label: "Browse these options", url: url });
       return "";
     });
     t = t.replace(/\s*:\s*([.!?])/g, "$1").replace(/\(\s*\)/g, "").replace(/[ \t]{2,}/g, " ").replace(/[ \t]+([.,!?])/g, "$1").replace(/\n{3,}/g, "\n\n").trim();
@@ -302,7 +304,6 @@
     say("assistant", intro, lks);
   }
 
-  // --- render (no persistence) ---
   function addBubble(role, text, links){
     var row = document.createElement("div");
     row.className = "vtg__row " + (role === "user" ? "vtg--u" : "vtg--a");
@@ -332,7 +333,7 @@
       });
       var hint = document.createElement("div");
       hint.className = "vtg__ctahint";
-      hint.textContent = "Affiliate link \u00B7 you book directly with the provider, at no extra cost to you.";
+      hint.textContent = "Independent provider \u00B7 you choose and book directly, at no extra cost to you.";
       cta.appendChild(hint);
       crow.appendChild(cta);
       log.appendChild(crow);
@@ -374,37 +375,47 @@
     var card = document.createElement("div");
     card.className = "vtg__cap";
     card.innerHTML =
-      '<h5>Your personalized plan</h5>' +
-      '<p class="lead">I\'ll put together your personalized plan from everything we\'ve discussed and email it to you \u2014 then we continue right here and fine-tune it together, with your options unlocked in the chat.</p>' +
+      '<h5>Your personalized suggestions</h5>' +
+      '<p class="lead">I\'ll gather your personalized suggestions from everything we\'ve discussed and email them to you \u2014 then we keep going right here: you choose what you like, and if anything doesn\'t fit or your dates change, just ask and I\'ll suggest more.</p>' +
       '<input type="text" class="vtg__cname" placeholder="First name (optional)" autocomplete="given-name" />' +
       '<input type="email" class="vtg__cmail" placeholder="Your email" autocomplete="email" inputmode="email" />' +
       '<label class="vtg__consent"><input type="checkbox" class="vtg__cmarketing" />' +
-        '<span>Yes — email me my personalized travel plan.</span></label>' +
+        '<span>Yes — email me my personalized travel suggestions.</span></label>' +
       '<label class="vtg__consent"><input type="checkbox" class="vtg__ceco" />' +
         '<span>Also send occasional travel ideas and tips from Vantage (optional).</span></label>' +
       '<div class="vtg__cerr"></div>' +
-      '<button type="button" class="vtg__capbtn">Send my plan ✉</button>' +
+      '<button type="button" class="vtg__capbtn">Email my suggestions ✉</button>' +
       '<button type="button" class="vtg__skipbtn">Continue without email — show my options here</button>' +
       '<p class="vtg__privacy">We use your details only to send what you asked for. No spam — opt out anytime. ' +
         '<a href="' + PRIVACY_URL + '" target="_blank" rel="noopener noreferrer">Privacy &amp; Cookies</a>.</p>';
     row.appendChild(card);
     log.appendChild(row);
+    captureCard = card;
     scrollDown();
     card.querySelector(".vtg__capbtn").addEventListener("click", function (){ submitLead(card); });
-    card.querySelector(".vtg__skipbtn").addEventListener("click", function (){ skipGate(card); });
+    card.querySelector(".vtg__skipbtn").addEventListener("click", function (){ skipGate(card, true); });
     var mail = card.querySelector(".vtg__cmail");
     mail.addEventListener("keydown", function (e){ if (e.key === "Enter"){ e.preventDefault(); submitLead(card); } });
     setTimeout(function(){ mail.focus(); }, 60);
   }
 
-  // --- valve: no dead ends, ever ---
-  function skipGate(card){
+  // --- valve: no dead ends, ever. explicit=true when user tapped the skip link. ---
+  function skipGate(card, explicit){
     linkGateOff = true;
     captureOpen = false;
-    card.innerHTML =
-      '<div style="font-size:12.8px;line-height:1.55;color:#6A7178">Of course — here are your options, right here in the chat. If you\'d like your full plan by email later, just tap \u2709 below anytime.</div>';
+    captureCard = null;
+    if (card && card.parentNode){
+      if (explicit){
+        card.innerHTML =
+          '<div style="font-size:12.8px;line-height:1.55;color:#6A7178">Of course — here are your options, right here in the chat. You choose and book directly with each provider. If you\'d like them by email later, just tap \u2709 below anytime.</div>';
+      } else {
+        // auto-valve: user continued chatting instead of filling the card — quietly remove it
+        var capRow = card.parentNode; // the .vtg__row wrapping the card
+        if (capRow && capRow.parentNode){ capRow.parentNode.removeChild(capRow); }
+      }
+    }
     scrollDown();
-    flushPending("Here\u2019s what we found for you \u2014 you book directly with the provider:");
+    flushPending("Here are your options to explore \u2014 you choose what you like and book directly with each provider:");
     saveState();
     showLeadBar();
   }
@@ -420,15 +431,14 @@
     if (!emailOk){ errEl.textContent = "Please enter a valid email address."; errEl.style.display = "block"; mailI.focus(); return; }
     if (!mk.checked){ errEl.textContent = "Please tick the box so I can email it to you."; errEl.style.display = "block"; return; }
     errEl.style.display = "none";
-    leadDone = true; captureOpen = false; hideLeadBar();
+    leadDone = true; captureOpen = false; captureCard = null; hideLeadBar();
     var nm = (nameI.value || "").trim();
     // optimistic confirmation (the backend calls the Brain + sends the email; can take a moment)
     card.innerHTML =
       '<strong style="display:block;font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;color:#8A6E2F;margin-bottom:6px">On its way ✉</strong>' +
-      '<div style="font-size:13.5px;line-height:1.6;color:#4A4126">Wonderful' + (nm ? ", " + esc(nm) : "") + ' — I\'m putting your personalized plan together now. It\'ll arrive at <b>' + esc(email) + '</b> within a minute or two (do check spam, just in case). Meanwhile, we keep going right here — your options are unlocked below, and even if you close this page, our conversation will be right here when you come back.</div>';
+      '<div style="font-size:13.5px;line-height:1.6;color:#4A4126">Wonderful' + (nm ? ", " + esc(nm) : "") + ' — I\'m gathering your personalized suggestions now. They\'ll arrive at <b>' + esc(email) + '</b> within a minute or two (do check spam, just in case). Meanwhile, we keep going right here \u2014 your options are unlocked below, you choose what you like, and even if you close this page, our conversation will be right here when you come back.</div>';
     scrollDown();
-    flushPending("While your plan is on its way \u2014 here are those options to explore right now:");
-    saveState();
+    flushPending("While your suggestions are on their way \u2014 here are those options to explore now; you choose and book directly with each provider:");
     fetch(LEAD_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -464,13 +474,13 @@
     pendingLinks = restored.pendingLinks || [];
     messages = restored.messages || [];
     messages.forEach(function (m){ addBubble(m.role, m.text, m.links); });
-    addBubble("assistant", "Welcome back — we can pick up right where we left off. What would you like to refine?");
+    addBubble("assistant", "Welcome back — we can pick up right where we left off. Want to refine anything, change your dates, or look at other options?");
     if (chips) chips.classList.add("is-hidden");
     userEngaged = true; // no nudge on a resumed conversation
     if (!leadDone && (pendingLinks.length || userTurns >= 2)) showLeadBar();
   } else {
-    say("assistant", "Hi — I'm Vantage, your AI travel concierge. You're chatting with an AI, not a human. Tell me where you're headed next, and I'll help you plan it.");
-    addNote("Disclosure", "You're chatting with an AI, not a human. Vantage is independent — some links are affiliate links, and we may earn a commission at no extra cost to you. You book directly with each provider.");
+    say("assistant", "Hi — I'm Vantage, your AI travel concierge. You're chatting with an AI, not a human. Tell me where you're headed next, and I'll help you plan it — I'll suggest great options, and you choose and book directly with each provider.");
+    addNote("How this works", "You're chatting with an AI, not a human. Vantage is independent — we suggest and recommend, we don't arrange trips or take payment. You choose and book directly with each provider. Some links are affiliate links; we may earn a commission at no extra cost to you.");
     startNudgeTimer();
   }
 
@@ -491,6 +501,10 @@
     if (!text || busy) return;
     cancelNudge();
     hideChips();
+    // AUTO-VALVE: if the plan-gate card is open and the user keeps chatting instead of
+    // filling it, treat that as "continue without email" — release held links so a
+    // high-intent traveler is NEVER stuck behind the gate.
+    if (captureOpen && captureCard){ skipGate(captureCard, false); }
     busy = true; send.disabled = true;
     say("user", text);
     var priorContext = buildContext();   // conversation so far (prior turns) — sent to the Brain so it remembers
@@ -513,7 +527,7 @@
         var parsed = renderLinks(raw);
         var unlocked = leadDone || linkGateOff;
         if (parsed.had && !unlocked){
-          // PLAN GATE: hold the link(s), give the value, offer the plan.
+          // PLAN GATE: hold the link(s), give the value, offer the suggestions by email.
           queueLinks(parsed.links);
           say("assistant", parsed.clean);
           pushT("Assistant", parsed.clean);
