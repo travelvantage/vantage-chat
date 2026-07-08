@@ -254,6 +254,26 @@
     } catch (e) {}
   }
 
+  // --- WP7 funnel event (fire-and-forget; reuses the conversation-log webhook via source field) ---
+  function logEvent(name, detail){
+    try {
+      fetch(LOG_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        keepalive: true,
+        body: JSON.stringify({
+          session_id: SESSION_ID,
+          source: "event:" + name,
+          user_message: detail ? String(detail).slice(0, 300) : "",
+          brain_reply: "",
+          had_link: false,
+          jurisdiction: JURISDICTION,
+          origin_host: location.host
+        })
+      }).catch(function(){});
+    } catch (e) {}
+  }
+
   // --- idle nudge ---
   var nudgeTimer = null, nudgeDone = false, userEngaged = false;
   function cancelNudge(){ userEngaged = true; if (nudgeTimer){ clearTimeout(nudgeTimer); nudgeTimer = null; } }
@@ -329,6 +349,7 @@
         arr.className = "vtg__ctaarrow";
         arr.textContent = "\u2197";
         a.appendChild(lab); a.appendChild(arr);
+        (function(u){ a.addEventListener("click", function(){ logEvent("cta_click", u); }); })(lk.url);
         cta.appendChild(a);
       });
       var hint = document.createElement("div");
@@ -369,6 +390,7 @@
   function showCapture(){
     if (leadDone || captureOpen) return;
     captureOpen = true;
+    logEvent("card_shown");
     hideLeadBar();
     var row = document.createElement("div");
     row.className = "vtg__row vtg--a";
@@ -404,6 +426,7 @@
     linkGateOff = true;
     captureOpen = false;
     captureCard = null;
+    logEvent(explicit ? "valve_skip" : "valve_auto");
     if (card && card.parentNode){
       if (explicit){
         card.innerHTML =
@@ -432,6 +455,7 @@
     if (!mk.checked){ errEl.textContent = "Please tick the box so I can email it to you."; errEl.style.display = "block"; return; }
     errEl.style.display = "none";
     leadDone = true; captureOpen = false; captureCard = null; hideLeadBar();
+    logEvent("email_submitted");
     var nm = (nameI.value || "").trim();
     // optimistic confirmation (the backend calls the Brain + sends the email; can take a moment)
     card.innerHTML =
@@ -477,8 +501,10 @@
     addBubble("assistant", "Welcome back — we can pick up right where we left off. Want to refine anything, change your dates, or look at other options?");
     if (chips) chips.classList.add("is-hidden");
     userEngaged = true; // no nudge on a resumed conversation
+    logEvent("session_resume");
     if (!leadDone && (pendingLinks.length || userTurns >= 2)) showLeadBar();
   } else {
+    logEvent("session_start");
     say("assistant", "Hi — I'm Vantage, your AI travel concierge. You're chatting with an AI, not a human. Tell me where you're headed next, and I'll help you plan it — I'll suggest great options, and you choose and book directly with each provider.");
     addNote("How this works", "You're chatting with an AI, not a human. Vantage is independent — we suggest and recommend, we don't arrange trips or take payment. You choose and book directly with each provider. Some links are affiliate links; we may earn a commission at no extra cost to you.");
     startNudgeTimer();
